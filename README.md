@@ -12,6 +12,13 @@ The port works by loading the official Android ARMv7 executable in memory, resol
 
 ## Changelog
 
+### v1.02
+
+- Fixed red exclamation mark bug on planets
+- Performance fixed on loading screens and menus
+- Small stutters reduced
+- Fixed app id error from version v1.01 (unistall it first)
+
 ### v1.01
 
 - Audio fix on the main menu
