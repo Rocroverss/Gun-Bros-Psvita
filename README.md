@@ -12,6 +12,10 @@ The port works by loading the official Android ARMv7 executable in memory, resol
 
 ## Changelog
 
+### v1.01
+
+- Audio fix on the main menu
+
 ### v1.0
 
 - Initial release.
@@ -26,7 +30,7 @@ The port works by loading the official Android ARMv7 executable in memory, resol
 > [!WARNING]
 > The game was delsited from stores but here you can read the wiki.
 
-- [Wiki](https://gunbros.fandom.com/wiki/Gun_Bros)
+- [Wiki](https://gunbros.fandom.com/wiki/Gun_Bros_Wiki)
 
 ## Setup Instructions For End Users
 
