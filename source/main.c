@@ -1030,6 +1030,9 @@ int main(void) {
 
         frame_begin_us = sceKernelGetProcessTimeWide();
         frame_count++;
+        if ((frame_count % 60u) == 0u) {
+            gunbros_audio_service();
+        }
         g_gunbros_render_frame = frame_count;
         tick_ms = gunbros_tick_rate_ms > 0 ? gunbros_tick_rate_ms : 16;
         frame_budget_ms = tick_ms < 16 ? 16 : tick_ms;

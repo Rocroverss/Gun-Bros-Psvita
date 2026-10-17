@@ -12,10 +12,10 @@ include("${VITASDK}/share/vita.cmake" REQUIRED)
 
 # Vita application configuration
 set(VITA_APP_NAME "Gun Bros")
-set(VITA_TITLEID "BROS00001")
-set(VITA_VPKNAME "Gun_Bros")
+set(VITA_TITLEID "SLDR00000")
+set(VITA_VPKNAME "so_loader")
 set(VITA_VERSION "01.00")
-set(VITA_MKSFOEX_FLAGS "-d ATTRIBUTE2=12 -s CONTENT_ID=HB0001-${VITA_TITLEID}_00-0000000000000000")
+set(VITA_MKSFOEX_FLAGS "-d ATTRIBUTE2=12")
 
 # Optional: used for "send" and "dump" targets
 set(PSVITAIP "192.168.0.198" CACHE STRING "PSVita IP (for FTP access)")
@@ -231,14 +231,6 @@ vita_create_vpk(${VITA_VPKNAME}.vpk ${VITA_TITLEID} eboot.bin
                 ${CMAKE_SOURCE_DIR}/extras/livearea/template.xml sce_sys/livearea/contents/template.xml
                 )
 add_dependencies(${VITA_VPKNAME}.vpk-vpk classic.bin-self)
-
-add_custom_target(copy_release_vpk ALL
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_BINARY_DIR}/${VITA_VPKNAME}.vpk"
-            "${CMAKE_SOURCE_DIR}/${VITA_VPKNAME}.vpk"
-    DEPENDS ${VITA_VPKNAME}.vpk-vpk
-    COMMENT "Updating root ${VITA_VPKNAME}.vpk"
-    VERBATIM)
 
 add_custom_target(send
                   COMMAND echo destroy | nc ${PSVITAIP} 1338

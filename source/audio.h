@@ -15,6 +15,7 @@ void gunbros_audio_configure_pcm(unsigned int sample_rate,
                                  unsigned int sample_bits);
 int gunbros_audio_start_pcm(void);
 void gunbros_audio_stop_pcm(void);
+void gunbros_audio_service(void);
 
 int gunbros_music_load(const char *requested_path);
 void gunbros_music_start(void);

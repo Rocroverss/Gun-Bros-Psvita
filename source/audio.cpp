@@ -540,6 +540,7 @@ struct AudioState {
     bool music_files_checked = false;
     bool music_loaded = false;
     bool music_looping = false;
+    bool pcm_requested = false;
     unsigned int pcm_rate = kDefaultPcmRate;
     unsigned int pcm_channels = kDefaultPcmChannels;
     unsigned int pcm_bits = kDefaultPcmBits;
@@ -883,6 +884,7 @@ extern "C" void gunbros_audio_destroy(void) {
     g_audio.music.stop();
     g_audio.soloud.deinit();
     g_audio.initialized = false;
+    g_audio.pcm_requested = false;
     g_audio.music_loaded = false;
     g_audio.pcm_handle = 0;
     g_audio.music_handle = 0;
@@ -923,8 +925,10 @@ extern "C" int gunbros_audio_start_pcm(void) {
     if (!init_locked() || g_audio.pcm_bits != 16) {
         return 0;
     }
+    g_audio.pcm_requested = true;
     if (valid_handle(g_audio.pcm_handle)) {
         g_audio.soloud.setPause(g_audio.pcm_handle, false);
+        g_audio.soloud.setProtectVoice(g_audio.pcm_handle, true);
         return 1;
     }
 
@@ -934,6 +938,9 @@ extern "C" int gunbros_audio_start_pcm(void) {
     g_pcm_silence_logged.store(0, std::memory_order_relaxed);
     g_audio.pcm_handle = g_audio.soloud.play(g_audio.pcm_source, 1.0f);
     const int started = valid_handle(g_audio.pcm_handle) ? 1 : 0;
+    if (started) {
+        g_audio.soloud.setProtectVoice(g_audio.pcm_handle, true);
+    }
     PCM_AUDIO_LOG("[AUDIO-PCM][START] rate=%u channels=%u bits=%u result=%d "
                   "handle=%u\n", g_audio.pcm_rate, g_audio.pcm_channels,
                   g_audio.pcm_bits, started,
@@ -943,10 +950,28 @@ extern "C" int gunbros_audio_start_pcm(void) {
 
 extern "C" void gunbros_audio_stop_pcm(void) {
     std::lock_guard<std::mutex> lock(g_audio.mutex);
+    g_audio.pcm_requested = false;
     if (g_audio.initialized && valid_handle(g_audio.pcm_handle)) {
         g_audio.soloud.stop(g_audio.pcm_handle);
     }
     g_audio.pcm_handle = 0;
+}
+
+extern "C" void gunbros_audio_service(void) {
+    bool recover = false;
+    {
+        std::lock_guard<std::mutex> lock(g_audio.mutex);
+        recover = g_audio.initialized && g_audio.pcm_requested &&
+                  !valid_handle(g_audio.pcm_handle);
+        if (recover) {
+            PCM_AUDIO_LOG("[AUDIO-PCM][LOST] voice=%u; restarting stream\n",
+                          static_cast<unsigned int>(g_audio.pcm_handle));
+            g_audio.pcm_handle = 0;
+        }
+    }
+    if (recover) {
+        (void)gunbros_audio_start_pcm();
+    }
 }
 
 extern "C" int gunbros_music_load(const char *requested_path) {
@@ -999,6 +1024,7 @@ extern "C" void gunbros_music_start(void) {
     }
     if (valid_handle(g_audio.music_handle)) {
         g_audio.soloud.setPause(g_audio.music_handle, false);
+        g_audio.soloud.setProtectVoice(g_audio.music_handle, true);
         start_music_clock_locked();
         return;
     }
@@ -1011,6 +1037,7 @@ extern "C" void gunbros_music_start(void) {
     g_audio.music_handle = g_audio.soloud.playBackground(g_audio.music, g_audio.music_volume);
     const bool started = valid_handle(g_audio.music_handle);
     if (started) {
+        g_audio.soloud.setProtectVoice(g_audio.music_handle, true);
         g_audio.soloud.setLooping(g_audio.music_handle, g_audio.music_looping);
         if (g_audio.pending_seek_seconds > 0.0) {
             (void)g_audio.soloud.seek(g_audio.music_handle, g_audio.pending_seek_seconds);
