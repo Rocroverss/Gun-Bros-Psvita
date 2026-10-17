@@ -12,6 +12,10 @@ The port works by loading the official Android ARMv7 executable in memory, resol
 
 ## Changelog
 
+### v1.01
+
+- Audio fix on the main menu
+
 ### v1.0
 
 - Initial release.
