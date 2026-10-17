@@ -1,4 +1,5 @@
 #include "reimpl/asset_manager.h"
+#include "utils/perf_trace.h"
 #include "utils/data_paths.h"
 #include "utils/logger.h"
 
@@ -111,13 +112,16 @@ AAssetManager * AAssetManager_create() {
 AAsset* AAssetManager_open(AAssetManager* mgr, const char* filename, int mode) {
     char realp[512];
     off_t resolved_size = 0;
+    bool have_size;
 
     (void)mgr;
     if (!filename) {
         return nullptr;
     }
 
-    if (!resolve_asset_path_cached(realp, sizeof(realp), filename, &resolved_size)) {
+    GUNBROS_PERF_BEGIN(open_begin);
+    have_size = resolve_asset_path_cached(realp, sizeof(realp), filename, &resolved_size);
+    if (!have_size) {
         gunbros_format_data_path(realp, sizeof(realp), "assets/", filename);
     }
 
@@ -152,26 +156,38 @@ AAsset* AAssetManager_open(AAssetManager* mgr, const char* filename, int mode) {
 #endif
         }
         a->fileSize = resolved_size > 0 ? (size_t)resolved_size : 0;
+        /* Installation assets are immutable while the process runs. Path
+         * resolution already obtained their size; avoid EOF seeks per open.
+         * Keep the fallback for files opened without successful resolution. */
+        if (!have_size) {
 #ifdef USE_SCELIBC_IO
-        if (sceLibcBridge_fseek(a->f, 0, SEEK_END) == 0) {
-            long end = sceLibcBridge_ftell(a->f);
-            if (end >= 0) {
-                a->fileSize = (size_t)end;
+            if (sceLibcBridge_fseek(a->f, 0, SEEK_END) == 0) {
+                long end = sceLibcBridge_ftell(a->f);
+                if (end >= 0) {
+                    a->fileSize = (size_t)end;
+                }
             }
-        }
-        (void)sceLibcBridge_fseek(a->f, 0, SEEK_SET);
+            (void)sceLibcBridge_fseek(a->f, 0, SEEK_SET);
 #else
-        if (fseek(a->f, 0, SEEK_END) == 0) {
-            long end = ftell(a->f);
-            if (end >= 0) {
-                a->fileSize = (size_t)end;
+            if (fseek(a->f, 0, SEEK_END) == 0) {
+                long end = ftell(a->f);
+                if (end >= 0) {
+                    a->fileSize = (size_t)end;
+                }
             }
-        }
-        (void)fseek(a->f, 0, SEEK_SET);
+            (void)fseek(a->f, 0, SEEK_SET);
 #endif
+        }
         a->opened = true;
     }
 
+    GUNBROS_PERF_END(GUNBROS_STAGE_ASSET_OPEN, open_begin, 0);
+#ifdef GUNBROS_ENABLE_PERF_TRACE
+    uint64_t open_elapsed = gunbros_perf_now() - open_begin;
+    if (open_elapsed >= 20000u)
+        GUNBROS_PERF_LOG("[PERF-ASSET-OPEN] path=%s elapsed_us=%llu size=%llu ok=%d\n",
+            realp, (unsigned long long)open_elapsed, (unsigned long long)resolved_size, a != nullptr);
+#endif
     l_debug("AAssetManager_open<%p>(%p, %s, %i): %p", __builtin_return_address(0), mgr, realp, mode, a);
     return (AAsset *) a;
 }
@@ -206,12 +222,20 @@ int AAsset_read(AAsset* asset, void* buf, size_t count) {
         return -1;
     }
 
+    GUNBROS_PERF_BEGIN(read_begin);
 #ifdef USE_SCELIBC_IO
     size_t ret = sceLibcBridge_fread(buf, 1, count, a->f);
 #else
     size_t ret = fread(buf, 1, count, a->f);
 #endif
 
+    GUNBROS_PERF_END(GUNBROS_STAGE_READ, read_begin, ret);
+#ifdef GUNBROS_ENABLE_PERF_TRACE
+    uint64_t read_us = gunbros_perf_now() - read_begin;
+    if (read_us >= 20000u)
+        GUNBROS_PERF_LOG("[PERF-READ] backend=asset path=%s bytes=%llu elapsed_us=%llu\n",
+            a->filename, (unsigned long long)ret, (unsigned long long)read_us);
+#endif
     if (ret > 0) {
         a->bytesRead += ret;
         return (int) ret;

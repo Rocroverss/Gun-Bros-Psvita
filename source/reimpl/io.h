@@ -130,6 +130,9 @@ char *fgets_soloader(char *s, int n, FILE *stream);
 int fgetc_soloader(FILE *stream);
 int getc_soloader(FILE *stream);
 int fileno_soloader(FILE *stream);
+int fgetpos_soloader(FILE *stream, fpos_t *pos);
+int fsetpos_soloader(FILE *stream, const fpos_t *pos);
+FILE *freopen_soloader(const char *path, const char *mode, FILE *stream);
 #endif
 
 #ifdef __cplusplus

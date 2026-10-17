@@ -1,4 +1,5 @@
 #include "audio.h"
+#include "utils/perf_trace.h"
 
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/processmgr.h>
@@ -19,6 +20,7 @@
 #include <limits>
 #include <string>
 #include <vector>
+#include <sys/stat.h>
 
 namespace {
 
@@ -353,13 +355,29 @@ static unsigned char *read_ogg_file(const char *relative_path, uint32_t &size_ou
     if (!file) {
         return nullptr;
     }
-    if (std::fseek(file, 0, SEEK_END) != 0) {
-        std::fclose(file);
-        return nullptr;
+    struct stat metadata;
+    long length_bytes;
+    if (fstat(fileno(file), &metadata) == 0 && S_ISREG(metadata.st_mode)) {
+        /* A freshly opened regular file is already at byte zero. Avoid the
+         * EOF/rewind pair on the main-thread first-play audio path. */
+        if (metadata.st_size <= 4 || metadata.st_size > kMaxBigAudioOggBytes) {
+            std::fclose(file);
+            return nullptr;
+        }
+        length_bytes = static_cast<long>(metadata.st_size);
+    } else {
+        /* Preserve support for backends which cannot provide file metadata. */
+        if (std::fseek(file, 0, SEEK_END) != 0) {
+            std::fclose(file);
+            return nullptr;
+        }
+        length_bytes = std::ftell(file);
+        if (std::fseek(file, 0, SEEK_SET) != 0) {
+            std::fclose(file);
+            return nullptr;
+        }
     }
-    const long length_bytes = std::ftell(file);
-    if (length_bytes <= 4 || length_bytes > kMaxBigAudioOggBytes ||
-        std::fseek(file, 0, SEEK_SET) != 0) {
+    if (length_bytes <= 4 || length_bytes > kMaxBigAudioOggBytes) {
         std::fclose(file);
         return nullptr;
     }
@@ -370,7 +388,9 @@ static unsigned char *read_ogg_file(const char *relative_path, uint32_t &size_ou
         std::fclose(file);
         return nullptr;
     }
+    GUNBROS_PERF_BEGIN(read_begin);
     const size_t read = std::fread(data, 1, static_cast<size_t>(length_bytes), file);
+    GUNBROS_PERF_END(GUNBROS_STAGE_READ, read_begin, read);
     std::fclose(file);
     if (read != static_cast<size_t>(length_bytes) ||
         std::memcmp(data, "OggS", 4) != 0) {
@@ -731,7 +751,9 @@ extern "C" int gunbros_audio_redirect_big_sound(void *binary) {
     auto *sample_rate_slot = reinterpret_cast<uint32_t *>(object + 28);
     auto *sample_bits_slot = reinterpret_cast<uint32_t *>(object + 32);
 
+    GUNBROS_PERF_BEGIN(wait_begin);
     std::lock_guard<std::mutex> lock(g_big_audio_map.mutex);
+    GUNBROS_PERF_END(GUNBROS_STAGE_AUDIO_WAIT, wait_begin, 0);
     load_big_audio_manifest_locked();
     if (g_big_audio_map.count == 0) {
         return 0;
@@ -748,7 +770,9 @@ extern "C" int gunbros_audio_redirect_big_sound(void *binary) {
     if (media_was_rejected_locked(binary, pcm_data, pcm_size)) {
         return 0;
     }
+    GUNBROS_PERF_BEGIN(hash_begin);
     const uint64_t hash = fnv1a64(pcm_data, pcm_size);
+    GUNBROS_PERF_END(GUNBROS_STAGE_AUDIO_HASH, hash_begin, pcm_size);
     if (hash_is_known_unusable_locked(hash)) {
         remember_rejected_media_locked(binary, pcm_data, pcm_size);
         return 0;
@@ -799,7 +823,9 @@ extern "C" int gunbros_audio_redirect_big_sound(void *binary) {
             }
 
             uint32_t ogg_size = 0;
+            GUNBROS_PERF_BEGIN(file_begin);
             unsigned char *ogg_data = read_ogg_file(entry.path, ogg_size);
+            GUNBROS_PERF_END(GUNBROS_STAGE_AUDIO_FILE, file_begin, ogg_size);
             if (!ogg_data) {
                 continue;
             }
@@ -809,9 +835,11 @@ extern "C" int gunbros_audio_redirect_big_sound(void *binary) {
             unsigned int channels = 0;
             unsigned int sample_rate = 0;
             unsigned int sample_bits = 0;
+            GUNBROS_PERF_BEGIN(decode_begin);
             const bool decoded = g_big_audio_map.vorbis_decoder(
                 ogg_data, ogg_size, decoded_pcm, decoded_size, 1,
                 channels, sample_bits, sample_rate);
+            GUNBROS_PERF_END(GUNBROS_STAGE_AUDIO_DECODE, decode_begin, decoded_size);
             std::free(ogg_data);
 
             if (!decoded || !decoded_pcm || decoded_size == 0 ||

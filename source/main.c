@@ -24,7 +24,7 @@
 #include <string.h>
 
 #define ENV ((JNIEnv *)&jni)
-#define GUNBROS_LOADER_BUILD "2026-09-08-launcher-classic-62"
+#define GUNBROS_LOADER_BUILD "2026-10-18-release-1.02-BROS00001-66"
 #ifndef GUNBROS_INPUT_TRACE
 #define GUNBROS_INPUT_TRACE 0
 #endif
@@ -128,6 +128,7 @@ static const char *gunbros_perf_scene_name(int scene) {
     }
 }
 
+#ifdef GUNBROS_ENABLE_PERF_TRACE
 void gunbros_perf_set_context(int scene, int screen, int branch,
                               const char *source) {
     if (scene < GUNBROS_PERF_SCENE_BOOT ||
@@ -140,6 +141,7 @@ void gunbros_perf_set_context(int scene, int screen, int branch,
         return;
     }
 
+    gunbros_perf_dump_stages("context-end");
     g_gunbros_perf_scene = scene;
     g_gunbros_perf_screen = screen;
     g_gunbros_perf_branch = branch;
@@ -150,6 +152,7 @@ void gunbros_perf_set_context(int scene, int screen, int branch,
                      gunbros_perf_scene_name(scene), screen, branch,
                      source ? source : "?");
 }
+#endif
 
 static void gunbros_perf_record_frame(uint64_t frame_begin_us,
                                       uint64_t native_begin_us,
@@ -177,6 +180,14 @@ static void gunbros_perf_record_frame(uint64_t frame_begin_us,
     }
 
     work_us = frame_end_us - frame_begin_us;
+    if (work_us >= 100000u) {
+        GUNBROS_PERF_LOG("[PERF-STALL] scene=%s screen=%d branch=%d frame_us=%llu native_us=%llu swap_us=%llu\n",
+            gunbros_perf_scene_name(g_gunbros_perf_scene), g_gunbros_perf_screen,
+            g_gunbros_perf_branch, (unsigned long long)work_us,
+            (unsigned long long)(native_end_us - native_begin_us),
+            (unsigned long long)(frame_end_us - native_end_us));
+        gunbros_perf_log_flush();
+    }
     native_us = native_end_us - native_begin_us;
     swap_us = frame_end_us - native_end_us;
     window.work_total_us += work_us;
@@ -199,6 +210,7 @@ static void gunbros_perf_record_frame(uint64_t frame_begin_us,
     if (window.frames < 120u) {
         return;
     }
+    gunbros_perf_dump_stages("frame-window");
     elapsed_us = frame_end_us - window.start_us;
     if (elapsed_us == 0u) {
         return;
@@ -970,7 +982,15 @@ int main(void) {
     sceClibPrintf("[BUILD] %s\n", GUNBROS_LOADER_BUILD);
 
     sceClibPrintf("SO Loader: soloader_init_all()...\n");
+    GUNBROS_PERF_LOG("[PERF-BOOT] event=loader-begin build=%s\n", GUNBROS_LOADER_BUILD);
+    gunbros_perf_log_flush();
+    GUNBROS_PERF_BEGIN(boot_begin);
     soloader_init_all();
+#ifdef GUNBROS_ENABLE_PERF_TRACE
+    GUNBROS_PERF_LOG("[PERF-BOOT] event=loader-end elapsed_us=%llu\n",
+        (unsigned long long)(gunbros_perf_now() - boot_begin));
+#endif
+    gunbros_perf_log_memory("loader-ready");
     sceClibPrintf("SO Loader: done.\n");
 
     if (!jni) {
@@ -1092,6 +1112,9 @@ int main(void) {
     }
 
     shutdown_game();
+    gunbros_perf_dump_stages("shutdown");
+    GUNBROS_PERF_LOG("[PERF-EXIT] returning to launcher\n");
+    gunbros_perf_log_flush();
     sceAppMgrLoadExec("app0:/eboot.bin", NULL, NULL);
     sceKernelExitDeleteThread(0);
     return 0;

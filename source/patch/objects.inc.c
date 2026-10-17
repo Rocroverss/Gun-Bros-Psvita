@@ -90,6 +90,7 @@ static int gunbros_game_object_pack_tables_ready(const void *pack,
     return 1;
 }
 
+#ifndef GUNBROS_QUIET_LOGS
 static void report_gunbros_registry_tables(const void *self, const char *source) {
     static const void *last_self;
     static unsigned int last_pack_count = UINT32_MAX;
@@ -185,6 +186,8 @@ static void report_gunbros_registry_tables(const void *self, const char *source)
                   first_pending);
 }
 
+#endif
+
 static void remember_live_gunbros_self(void *self, const char *source) {
     if (gunbros_object_registry_is_valid(self)) {
         if (g_live_gunbros_self != self && trace_allow("CGunBros/live-registry")) {
@@ -192,7 +195,9 @@ static void remember_live_gunbros_self(void *self, const char *source) {
                           source ? source : "?", self, g_live_gunbros_self);
         }
         g_live_gunbros_self = self;
+#ifndef GUNBROS_QUIET_LOGS
         report_gunbros_registry_tables(self, source);
+#endif
     }
 }
 
@@ -256,8 +261,14 @@ static int trace_gunbros_flatten_object_index_const(void *self,
         return 0;
     }
 
-    return SO_CONTINUE(int, h_gunbros_flatten_object_index_const,
-                       safe_self, type, index, pack, out_flat);
+    GUNBROS_PERF_BEGIN(lookup_begin);
+    int result;
+    if (g_original_registry_flatten)
+        result = ((int (*)(void *, unsigned, unsigned, unsigned, uint16_t *))g_original_registry_flatten)(safe_self, type, index, pack, out_flat);
+    else
+        result = SO_CONTINUE(int, h_gunbros_flatten_object_index_const, safe_self, type, index, pack, out_flat);
+    GUNBROS_PERF_END(GUNBROS_STAGE_REGISTRY_LOOKUP, lookup_begin, 0);
+    return result;
 }
 
 static unsigned int trace_gunbros_get_object_count_const(void *self, unsigned int type) {
@@ -269,7 +280,14 @@ static unsigned int trace_gunbros_get_object_count_const(void *self, unsigned in
         return 0;
     }
 
-    return SO_CONTINUE(unsigned int, h_gunbros_get_object_count_const, safe_self, type);
+    GUNBROS_PERF_BEGIN(lookup_begin);
+    unsigned result;
+    if (g_original_registry_count)
+        result = ((unsigned (*)(void *, unsigned))g_original_registry_count)(safe_self, type);
+    else
+        result = SO_CONTINUE(unsigned, h_gunbros_get_object_count_const, safe_self, type);
+    GUNBROS_PERF_END(GUNBROS_STAGE_REGISTRY_LOOKUP, lookup_begin, 0);
+    return result;
 }
 
 static int trace_gunbros_validate_game_object_3_const(void *self,
@@ -284,8 +302,14 @@ static int trace_gunbros_validate_game_object_3_const(void *self,
         return 0;
     }
 
-    return SO_CONTINUE(int, h_gunbros_validate_game_object_3_const,
-                       safe_self, type, index, pack);
+    GUNBROS_PERF_BEGIN(lookup_begin);
+    int result;
+    if (g_original_registry_validate)
+        result = ((int (*)(void *, unsigned, unsigned, unsigned))g_original_registry_validate)(safe_self, type, index, pack);
+    else
+        result = SO_CONTINUE(int, h_gunbros_validate_game_object_3_const, safe_self, type, index, pack);
+    GUNBROS_PERF_END(GUNBROS_STAGE_REGISTRY_LOOKUP, lookup_begin, 0);
+    return result;
 }
 
 static int trace_gunbros_validate_game_object_ref_const(void *self,
@@ -303,8 +327,14 @@ static int trace_gunbros_validate_game_object_ref_const(void *self,
         return 0;
     }
 
-    return SO_CONTINUE(int, h_gunbros_validate_game_object_ref_const,
-                       safe_self, type, ref);
+    GUNBROS_PERF_BEGIN(lookup_begin);
+    int result;
+    if (g_original_registry_validate_ref)
+        result = ((int (*)(void *, unsigned, const void *))g_original_registry_validate_ref)(safe_self, type, ref);
+    else
+        result = SO_CONTINUE(int, h_gunbros_validate_game_object_ref_const, safe_self, type, ref);
+    GUNBROS_PERF_END(GUNBROS_STAGE_REGISTRY_LOOKUP, lookup_begin, 0);
+    return result;
 }
 
 static void *trace_gunbros_get_game_object_pack(void *self,
@@ -319,8 +349,14 @@ static void *trace_gunbros_get_game_object_pack(void *self,
         return NULL;
     }
 
-    return SO_CONTINUE(void *, h_gunbros_get_game_object_pack,
-                       safe_self, type, index, pack);
+    GUNBROS_PERF_BEGIN(lookup_begin);
+    void *result;
+    if (g_original_registry_get)
+        result = ((void *(*)(void *, unsigned, unsigned, unsigned))g_original_registry_get)(safe_self, type, index, pack);
+    else
+        result = SO_CONTINUE(void *, h_gunbros_get_game_object_pack, safe_self, type, index, pack);
+    GUNBROS_PERF_END(GUNBROS_STAGE_REGISTRY_LOOKUP, lookup_begin, 0);
+    return result;
 }
 
 static void *trace_gunbros_get_game_object_pack_const(void *self,
@@ -335,8 +371,14 @@ static void *trace_gunbros_get_game_object_pack_const(void *self,
         return NULL;
     }
 
-    return SO_CONTINUE(void *, h_gunbros_get_game_object_pack_const,
-                       safe_self, type, index, pack);
+    GUNBROS_PERF_BEGIN(lookup_begin);
+    void *result;
+    if (g_original_registry_get_const)
+        result = ((void *(*)(void *, unsigned, unsigned, unsigned))g_original_registry_get_const)(safe_self, type, index, pack);
+    else
+        result = SO_CONTINUE(void *, h_gunbros_get_game_object_pack_const, safe_self, type, index, pack);
+    GUNBROS_PERF_END(GUNBROS_STAGE_REGISTRY_LOOKUP, lookup_begin, 0);
+    return result;
 }
 
 static void trace_gunbros_load_game_object_req(void *self,
@@ -351,8 +393,12 @@ static void trace_gunbros_load_game_object_req(void *self,
         return;
     }
 
-    (void)SO_CONTINUE(int, h_gunbros_load_game_object_req,
-                      safe_self, type, flat_index, flag);
+    GUNBROS_PERF_BEGIN(ref_begin);
+    if (g_original_registry_load_req)
+        ((void (*)(void *, unsigned, unsigned, unsigned))g_original_registry_load_req)(safe_self, type, flat_index, flag);
+    else
+        (void)SO_CONTINUE(int, h_gunbros_load_game_object_req, safe_self, type, flat_index, flag);
+    GUNBROS_PERF_END(GUNBROS_STAGE_RESOURCE_REF, ref_begin, 0);
 }
 
 static void trace_gunbros_free_game_object_req(void *self,
@@ -367,8 +413,12 @@ static void trace_gunbros_free_game_object_req(void *self,
         return;
     }
 
-    (void)SO_CONTINUE(int, h_gunbros_free_game_object_req,
-                      safe_self, type, flat_index, flag);
+    GUNBROS_PERF_BEGIN(ref_begin);
+    if (g_original_registry_free_req)
+        ((void (*)(void *, unsigned, unsigned, unsigned))g_original_registry_free_req)(safe_self, type, flat_index, flag);
+    else
+        (void)SO_CONTINUE(int, h_gunbros_free_game_object_req, safe_self, type, flat_index, flag);
+    GUNBROS_PERF_END(GUNBROS_STAGE_RESOURCE_REF, ref_begin, 0);
 }
 
 
@@ -3214,8 +3264,6 @@ static void *trace_game_object_pack_get_game_object(void *self, unsigned int typ
 
 static void trace_game_object_pack_init_game_object(void *self, unsigned int type, unsigned int index) {
     typedef void (*game_object_init_fn_t)(void *, unsigned int, unsigned int);
-    uint64_t begin_us;
-    uint64_t end_us;
 
     GUNBROS_PERF_COUNT(game_object_init_calls);
     if (!gobj_ensure_type_storage(self, type, index)) {
@@ -3226,7 +3274,7 @@ static void trace_game_object_pack_init_game_object(void *self, unsigned int typ
         return;
     }
 
-    begin_us = sceKernelGetProcessTimeWide();
+    GUNBROS_PERF_BEGIN(object_begin);
     if (g_original_game_object_pack_init_game_object) {
         ((game_object_init_fn_t)g_original_game_object_pack_init_game_object)(
             self, type, index);
@@ -3234,12 +3282,7 @@ static void trace_game_object_pack_init_game_object(void *self, unsigned int typ
         (void)SO_CONTINUE(int, h_game_object_pack_init_game_object,
                           self, type, index);
     }
-    end_us = sceKernelGetProcessTimeWide();
-    if (end_us >= begin_us && end_us - begin_us >= 250000u) {
-        GUNBROS_PERF_LOG("[PERF-LOAD] kind=game-object elapsed_us=%llu pack=%p type=%u index=%u\n",
-                         (unsigned long long)(end_us - begin_us), self,
-                         type, index);
-    }
+    GUNBROS_PERF_END(GUNBROS_STAGE_OBJECT, object_begin, 0);
 }
 
 static void *gameplay_find_brother_target(void);

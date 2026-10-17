@@ -24,6 +24,7 @@
 #include <wchar.h>
 #include <wctype.h>
 #include <zlib.h>
+#include "utils/perf_trace.h"
 #include <locale.h>
 #include <poll.h>
 
@@ -307,6 +308,17 @@ int atexit(void (*func)(void)) {
 
 
 
+#ifdef GUNBROS_ENABLE_PERF_TRACE
+static int inflate_profiled(z_streamp stream, int flush) {
+    GUNBROS_PERF_BEGIN(begin);
+    uLong before = stream ? stream->total_out : 0;
+    int result = inflate(stream, flush);
+    uint64_t bytes = stream && stream->total_out >= before ? stream->total_out - before : 0;
+    GUNBROS_PERF_END(GUNBROS_STAGE_INFLATE, begin, bytes);
+    return result;
+}
+#endif
+
 so_default_dynlib default_dynlib[] = {
         //my own fixing missing imports
         { "modff", (uintptr_t)&modff },
@@ -575,15 +587,15 @@ so_default_dynlib default_dynlib[] = {
             { "ferror", (uintptr_t)&ferror_soloader },
             { "fflush", (uintptr_t)&GAME_FFLUSH },
             { "fgetc", (uintptr_t)&fgetc_soloader },
-            { "fgetpos", (uintptr_t)&sceLibcBridge_fgetpos },
+            { "fgetpos", (uintptr_t)&fgetpos_soloader },
             { "fgets", (uintptr_t)&fgets_soloader },
             { "fileno", (uintptr_t)&fileno_soloader },
             { "fputc", (uintptr_t)&GAME_FPUTC },
             { "fputs", (uintptr_t)&GAME_FPUTS },
             { "fread", (uintptr_t)&fread_soloader },
-            { "freopen", (uintptr_t)&sceLibcBridge_freopen },
+            { "freopen", (uintptr_t)&freopen_soloader },
             { "fseek", (uintptr_t)&fseek_soloader },
-            { "fsetpos", (uintptr_t)&sceLibcBridge_fsetpos },
+            { "fsetpos", (uintptr_t)&fsetpos_soloader },
             { "ftell", (uintptr_t)&ftell_soloader },
             { "fwide", (uintptr_t)&sceLibcBridge_fwide },
             { "fwrite", (uintptr_t)&GAME_FWRITE },
@@ -736,7 +748,11 @@ so_default_dynlib default_dynlib[] = {
         { "glColorMask", (uintptr_t)&glColorMask },
         { "glColorPointer", (uintptr_t)&glColorPointer },
         { "glCompileShader", (uintptr_t)&glCompileShader_soloader },
+        #ifdef GUNBROS_ENABLE_PERF_TRACE
+        { "glCompressedTexImage2D", (uintptr_t)&glCompressedTexImage2D_profiled },
+#else
         { "glCompressedTexImage2D", (uintptr_t)&glCompressedTexImage2D },
+#endif
         { "glCompressedTexSubImage2D", (uintptr_t)&ret0 },
         { "glCopyTexImage2D", (uintptr_t)&glCopyTexImage2D },
         { "glCopyTexSubImage2D", (uintptr_t)&glCopyTexSubImage2D },
@@ -914,7 +930,11 @@ so_default_dynlib default_dynlib[] = {
         { "glTexGenivOES", (uintptr_t)&ret0 },
         { "glTexGenxOES", (uintptr_t)&ret0 },
         { "glTexGenxvOES", (uintptr_t)&ret0 },
+        #ifdef GUNBROS_ENABLE_PERF_TRACE
+        { "glTexImage2D", (uintptr_t)&glTexImage2D_profiled },
+#else
         { "glTexImage2D", (uintptr_t)&glTexImage2D },
+#endif
         { "glTexParameterf", (uintptr_t)&glTexParameterf },
         { "glTexParameterfv", (uintptr_t)&ret0 },
         { "glTexParameteri", (uintptr_t)&glTexParameteri },
@@ -1207,7 +1227,11 @@ so_default_dynlib default_dynlib[] = {
         { "gzclose", (uintptr_t)&gzclose },
         { "gzgets", (uintptr_t)&gzgets },
         { "gzopen", (uintptr_t)&gzopen },
+        #ifdef GUNBROS_ENABLE_PERF_TRACE
+        { "inflate", (uintptr_t)&inflate_profiled },
+#else
         { "inflate", (uintptr_t)&inflate },
+#endif
         { "inflateEnd", (uintptr_t)&inflateEnd },
         { "inflateInit2_", (uintptr_t)&inflateInit2_ },
         { "inflateInit_", (uintptr_t)&inflateInit_ },

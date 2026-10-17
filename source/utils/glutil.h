@@ -26,6 +26,12 @@ void gl_init();
 void gl_preload();
 
 void gl_swap();
+void glTexImage2D_profiled(GLenum target, GLint level, GLint internal_format,
+                         GLsizei width, GLsizei height, GLint border,
+                         GLenum format, GLenum type, const void *pixels);
+void glCompressedTexImage2D_profiled(GLenum target, GLint level, GLenum internal_format,
+                         GLsizei width, GLsizei height, GLint border,
+                         GLsizei image_size, const void *pixels);
 
 void glCompileShader_soloader(GLuint shader);
 

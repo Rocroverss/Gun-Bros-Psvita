@@ -8,6 +8,8 @@
  */
 
 #include "reimpl/io.h"
+#include "utils/perf_trace.h"
+#include "utils/read_window.h"
 
 #include <string.h>
 #include <sys/stat.h>
@@ -148,6 +150,21 @@ static int resource_stream_path(const char *path) {
 }
 
 static void tune_resource_stream(FILE *stream, const char *path, const char *mode) {
+#ifdef USE_SCELIBC_IO
+    if (stream && mode && mode[0] == 'r' && !strchr(mode, '+') &&
+        resource_stream_path(path) && is_native_file(stream)) {
+        struct stat st;
+        if (stat(path, &st) == 0 && S_ISREG(st.st_mode) &&
+            gunbros_window_attach(stream, st.st_size) == 0) {
+            /* The shared window replaces per-file read-ahead. Avoid a second
+             * stdio buffer which would otherwise be discarded on every seek. */
+            (void)setvbuf(stream, NULL, _IONBF, 0);
+            GUNBROS_PERF_LOG("[PERF-IO-WINDOW-OPEN] file=%p path=%s length=%llu shared_budget=262144\n",
+                stream, path, (unsigned long long)st.st_size);
+            return;
+        }
+    }
+#endif
     if (stream && mode_reads(mode) && resource_stream_path(path)) {
         /* BIG readers perform many small fread/fseek operations. Retain only
          * a 128 KiB window per open pack; the existing FIOS filter remains
@@ -459,6 +476,7 @@ int stat_soloader(const char * path, stat64_bionic * buf) {
 }
 
 int fclose_soloader(FILE * f) {
+    gunbros_window_drop(f);
 #ifdef USE_SCELIBC_IO
     int ret;
     if (is_native_file(f)) {
@@ -476,6 +494,7 @@ int fclose_soloader(FILE * f) {
 }
 
 int vfprintf_soloader(FILE *stream, const char *format, va_list args) {
+    if (gunbros_window_detach(stream) != 0) return -1;
 #ifdef USE_SCELIBC_IO
     return is_native_file(stream) ? vfprintf(stream, format, args)
                                   : sceLibcBridge_vfprintf(stream, format, args);
@@ -498,7 +517,7 @@ int fprintf_soloader(FILE *stream, const char *format, ...) {
 void rewind_soloader(FILE *stream) {
 #ifdef USE_SCELIBC_IO
     if (is_native_file(stream)) {
-        rewind(stream);
+        gunbros_window_rewind(stream);
     } else {
         (void)sceLibcBridge_fseek(stream, 0, SEEK_SET);
     }
@@ -508,23 +527,28 @@ void rewind_soloader(FILE *stream) {
 }
 
 int fseeko_soloader(FILE *stream, off_t offset, int whence) {
+    GUNBROS_PERF_BEGIN(seek_begin);
 #ifdef USE_SCELIBC_IO
-    return is_native_file(stream) ? fseeko(stream, offset, whence)
+    int result = is_native_file(stream) ?
+        (gunbros_window_active(stream) ? gunbros_window_seek(stream, offset, whence) : fseeko(stream, offset, whence))
                                   : sceLibcBridge_fseek(stream, (long int)offset, whence);
 #else
-    return fseeko(stream, offset, whence);
+    int result = fseeko(stream, offset, whence);
 #endif
+    GUNBROS_PERF_END(GUNBROS_STAGE_SEEK, seek_begin, 0);
+    return result;
 }
 
 off_t ftello_soloader(FILE *stream) {
 #ifdef USE_SCELIBC_IO
-    return is_native_file(stream) ? ftello(stream) : (off_t)sceLibcBridge_ftell(stream);
+    return is_native_file(stream) ? (off_t)gunbros_window_tell(stream) : (off_t)sceLibcBridge_ftell(stream);
 #else
     return ftello(stream);
 #endif
 }
 
 int ungetc_soloader(int c, FILE *stream) {
+    if (gunbros_window_detach(stream) != 0) return EOF;
 #ifdef USE_SCELIBC_IO
     return is_native_file(stream) ? ungetc(c, stream) : sceLibcBridge_ungetc(c, stream);
 #else
@@ -533,6 +557,7 @@ int ungetc_soloader(int c, FILE *stream) {
 }
 
 int setvbuf_soloader(FILE *stream, char *buffer, int mode, size_t size) {
+    if (gunbros_window_detach(stream) != 0) return -1;
 #ifdef USE_SCELIBC_IO
     return is_native_file(stream) ? setvbuf(stream, buffer, mode, size)
                                   : sceLibcBridge_setvbuf(stream, buffer, mode, size);
@@ -608,17 +633,26 @@ int ioctl_soloader(int fd, int request, ...) {
 
 #ifdef USE_SCELIBC_IO
 size_t fread_soloader(void *ptr, size_t size, size_t count, FILE *stream) {
+    GUNBROS_PERF_BEGIN(read_begin);
     int native = is_native_file(stream);
-    size_t ret = native ? fread(ptr, size, count, stream)
+    size_t ret = native ? gunbros_window_read(ptr, size, count, stream)
                         : sceLibcBridge_fread(ptr, size, count, stream);
+    GUNBROS_PERF_END(GUNBROS_STAGE_READ, read_begin, (uint64_t)ret * size);
+#ifdef GUNBROS_ENABLE_PERF_TRACE
+    uint64_t read_us = gunbros_perf_now() - read_begin;
+    if (read_us >= 20000u)
+        GUNBROS_PERF_LOG("[PERF-READ] backend=%s path=%s bytes=%llu elapsed_us=%llu\n",
+            native ? "native" : "bridge", native ? native_file_path(stream) : "(pack identity in PERF-REQUEST)",
+            (unsigned long long)((uint64_t)ret * size), (unsigned long long)read_us);
+#endif
 
     if (size != 0 && count != 0 && ret < count) {
         static int read_logs = 0;
 
         if (asset_io_log_allow(&read_logs, 128)) {
-            int eof = native ? feof(stream) : sceLibcBridge_feof(stream);
+            int eof = native ? gunbros_window_eof(stream) : sceLibcBridge_feof(stream);
             int err = native ? ferror(stream) : sceLibcBridge_ferror(stream);
-            long pos = native ? ftell(stream) : sceLibcBridge_ftell(stream);
+            long pos = native ? gunbros_window_tell(stream) : sceLibcBridge_ftell(stream);
 
             sceClibPrintf("[ASSET-IO] fread short file=%p path='%s' backend=%s size=%u count=%u got=%u bytes=%u/%u pos=%ld eof=%d err=%d\n",
                           stream,
@@ -639,14 +673,17 @@ size_t fread_soloader(void *ptr, size_t size, size_t count, FILE *stream) {
 }
 
 size_t fwrite_soloader(const void *ptr, size_t size, size_t count, FILE *stream) {
+    if (gunbros_window_detach(stream) != 0) return 0;
     return is_native_file(stream) ? fwrite(ptr, size, count, stream)
                                    : sceLibcBridge_fwrite(ptr, size, count, stream);
 }
 
 int fseek_soloader(FILE *stream, long int offset, int origin) {
+    GUNBROS_PERF_BEGIN(seek_begin);
     int native = is_native_file(stream);
-    int ret = native ? fseek(stream, offset, origin)
+    int ret = native ? gunbros_window_seek(stream, offset, origin)
                      : sceLibcBridge_fseek(stream, offset, origin);
+    GUNBROS_PERF_END(GUNBROS_STAGE_SEEK, seek_begin, 0);
 
     if (ret != 0) {
         static int seek_logs = 0;
@@ -667,7 +704,7 @@ int fseek_soloader(FILE *stream, long int offset, int origin) {
 
 long int ftell_soloader(FILE *stream) {
     int native = is_native_file(stream);
-    long int ret = native ? ftell(stream) : sceLibcBridge_ftell(stream);
+    long int ret = native ? gunbros_window_tell(stream) : sceLibcBridge_ftell(stream);
 
     if (ret < 0) {
         static int tell_logs = 0;
@@ -685,7 +722,7 @@ long int ftell_soloader(FILE *stream) {
 }
 
 int feof_soloader(FILE *stream) {
-    return is_native_file(stream) ? feof(stream) : sceLibcBridge_feof(stream);
+    return is_native_file(stream) ? gunbros_window_eof(stream) : sceLibcBridge_feof(stream);
 }
 
 int ferror_soloader(FILE *stream) {
@@ -693,23 +730,48 @@ int ferror_soloader(FILE *stream) {
 }
 
 int fflush_soloader(FILE *stream) {
+    if (gunbros_window_detach(stream) != 0) return EOF;
     return is_native_file(stream) ? fflush(stream) : sceLibcBridge_fflush(stream);
 }
 
 char *fgets_soloader(char *s, int n, FILE *stream) {
+    if (gunbros_window_detach(stream) != 0) return NULL;
     return is_native_file(stream) ? fgets(s, n, stream) : sceLibcBridge_fgets(s, n, stream);
 }
 
 int fgetc_soloader(FILE *stream) {
+    if (gunbros_window_detach(stream) != 0) return EOF;
     return is_native_file(stream) ? fgetc(stream) : sceLibcBridge_fgetc(stream);
 }
 
 int getc_soloader(FILE *stream) {
+    if (gunbros_window_detach(stream) != 0) return EOF;
     return is_native_file(stream) ? getc(stream) : sceLibcBridge_getc(stream);
 }
 
 int fileno_soloader(FILE *stream) {
+    if (gunbros_window_detach(stream) != 0) return -1;
     return is_native_file(stream) ? fileno(stream) : sceLibcBridge_fileno(stream);
+}
+
+int fgetpos_soloader(FILE *stream, fpos_t *pos) {
+    if (gunbros_window_detach(stream) != 0) return -1;
+    return is_native_file(stream) ? fgetpos(stream, pos) : sceLibcBridge_fgetpos(stream, pos);
+}
+
+int fsetpos_soloader(FILE *stream, const fpos_t *pos) {
+    if (gunbros_window_detach(stream) != 0) return -1;
+    return is_native_file(stream) ? fsetpos(stream, pos) : sceLibcBridge_fsetpos(stream, pos);
+}
+
+FILE *freopen_soloader(const char *path, const char *mode, FILE *stream) {
+    int native = is_native_file(stream);
+    gunbros_window_drop(stream);
+    if (native) unmark_native_file(stream);
+    FILE *result = native ? freopen(path, mode, stream) : sceLibcBridge_freopen(path, mode, stream);
+    if (native && result) mark_native_file(result, path);
+    tune_resource_stream(result, path, mode);
+    return result;
 }
 #endif
 

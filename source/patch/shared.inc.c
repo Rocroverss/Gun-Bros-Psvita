@@ -1,3 +1,8 @@
+static uintptr_t g_original_registry_flatten, g_original_registry_count;
+static uintptr_t g_original_registry_validate, g_original_registry_validate_ref;
+/* Stable continuations for hot registry lookups: no per-call code rewriting. */
+static uintptr_t g_original_registry_get, g_original_registry_get_const;
+static uintptr_t g_original_registry_load_req, g_original_registry_free_req;
 /* Shared hook state, tracing, pointer validation, and runtime diagnostics. */
 
 #define GUNBROS_OBJECT_TYPE_GUN 6u

@@ -12,6 +12,7 @@
 #include "utils/utils.h"
 #include "utils/dialog.h"
 #include "utils/logger.h"
+#include "utils/perf_trace.h"
 
 #include <stdio.h>
 #include <malloc.h>
@@ -50,6 +51,36 @@ void gl_init() {
 
 void gl_swap() {
     vglSwapBuffers(GL_FALSE);
+}
+
+/* Diagnostic separation of texture upload/conversion from image decoding.
+ * Original formats, dimensions, pixels and GL ownership are preserved. */
+void glTexImage2D_profiled(GLenum target, GLint level, GLint internal_format,
+                         GLsizei width, GLsizei height, GLint border,
+                         GLenum format, GLenum type, const void *pixels) {
+    GUNBROS_PERF_BEGIN(begin);
+    glTexImage2D(target, level, internal_format, width, height, border, format, type, pixels);
+    GUNBROS_PERF_END(GUNBROS_STAGE_TEXTURE_UPLOAD, begin, 0);
+#ifdef GUNBROS_ENABLE_PERF_TRACE
+    uint64_t elapsed = gunbros_perf_now() - begin;
+    if (elapsed >= 20000u)
+        GUNBROS_PERF_LOG("[PERF-TEXTURE] compressed=0 size=%dx%d format=0x%x type=0x%x level=%d elapsed_us=%llu\n",
+            width, height, format, type, level, (unsigned long long)elapsed);
+#endif
+}
+
+void glCompressedTexImage2D_profiled(GLenum target, GLint level, GLenum internal_format,
+                         GLsizei width, GLsizei height, GLint border,
+                         GLsizei image_size, const void *pixels) {
+    GUNBROS_PERF_BEGIN(begin);
+    glCompressedTexImage2D(target, level, internal_format, width, height, border, image_size, pixels);
+    GUNBROS_PERF_END(GUNBROS_STAGE_TEXTURE_UPLOAD, begin, image_size > 0 ? image_size : 0);
+#ifdef GUNBROS_ENABLE_PERF_TRACE
+    uint64_t elapsed = gunbros_perf_now() - begin;
+    if (elapsed >= 20000u)
+        GUNBROS_PERF_LOG("[PERF-TEXTURE] compressed=1 size=%dx%d format=0x%x bytes=%d level=%d elapsed_us=%llu\n",
+            width, height, internal_format, image_size, level, (unsigned long long)elapsed);
+#endif
 }
 
 void glDisable_soloader(GLenum cap) {

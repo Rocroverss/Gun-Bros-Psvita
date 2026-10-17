@@ -1461,7 +1461,9 @@ static void trace_gunbros_load_menus(void *self) {
     }
 
     vita_offline_profile_begin_bulk_transition("CGunBros::LoadMenus");
+    GUNBROS_PERF_MENU_BEGIN(GUNBROS_STAGE_LOAD_MENUS, perf_begin);
     continue_void_self_hook(&h_gunbros_load_menus, self);
+    GUNBROS_PERF_END(GUNBROS_STAGE_LOAD_MENUS, perf_begin, 0);
     vita_offline_profile_end_bulk_transition("CGunBros::LoadMenus");
 
     if (log) {
@@ -1478,7 +1480,9 @@ static void trace_gunbros_load_mission(void *self) {
     }
 
     vita_offline_profile_begin_bulk_transition("CGunBros::LoadMission");
+    GUNBROS_PERF_MENU_BEGIN(GUNBROS_STAGE_LOAD_MISSION, perf_begin);
     continue_void_self_hook(&h_gunbros_load_mission, self);
+    GUNBROS_PERF_END(GUNBROS_STAGE_LOAD_MISSION, perf_begin, 0);
     vita_offline_profile_end_bulk_transition("CGunBros::LoadMission");
 
     if (log) {
@@ -1571,7 +1575,9 @@ static int trace_gunbros_set_menu(void *self, int screen) {
                       self, screen);
     }
 
+    GUNBROS_PERF_MENU_BEGIN(GUNBROS_STAGE_SET_MENU, perf_begin);
     ret = SO_CONTINUE(int, h_gunbros_set_menu, self, screen);
+    GUNBROS_PERF_END(GUNBROS_STAGE_SET_MENU, perf_begin, 0);
 
     if (log) {
         sceClibPrintf("[TRACE-MENU] leave CGunBros::SetMenu(this=%p, screen=%d) -> %d\n",
@@ -1681,11 +1687,17 @@ static void trace_resource_load_next(void *self) {
      * state used by CGunBros::UpdateLoading(). */
 #endif
 
+    if (before.processed < before.queued)
+    GUNBROS_PERF_LOG("[PERF-REQUEST] loader=%p queue=%d/%d node_type=%u pack=%u logical=0x%08x callback=0x%08x\n",
+        self, before.processed, before.queued, before.node_type,
+        before.media_pack_index, before.media_logical_id, before.callback_offset);
+    GUNBROS_PERF_BEGIN(resource_begin);
     if (g_original_resource_load_next) {
         ((resource_load_next_fn_t)g_original_resource_load_next)(self);
     } else {
         continue_void_self_hook(&h_resource_load_next, self);
     }
+    GUNBROS_PERF_END(GUNBROS_STAGE_RESOURCE, resource_begin, 0);
     register_loaded_big_media(&before);
 #if !defined(GUNBROS_QUIET_LOGS) || defined(GUNBROS_ENABLE_PERF_TRACE)
     after = resource_loader_trace_snapshot(self);
@@ -1705,7 +1717,7 @@ static void trace_resource_load_next(void *self) {
 #endif
 
 #ifdef GUNBROS_ENABLE_PERF_TRACE
-    if (end_us >= begin_us && end_us - begin_us >= 250000u) {
+    if (end_us >= begin_us && end_us - begin_us >= 20000u) {
         GUNBROS_PERF_LOG("[PERF-LOAD] kind=resource elapsed_us=%llu queue=%u/%u->%u/%u node_type=%u pack=%u logical=0x%08x callback=0x%08x\n",
                          (unsigned long long)(end_us - begin_us),
                          (unsigned int)before.processed,
@@ -1726,7 +1738,9 @@ static int trace_menu_stack_load_menu(void *self) {
         sceClibPrintf("[TRACE-ASSET] enter CMenuStack::LoadMenu(this=%p)\n", self);
     }
 
+    GUNBROS_PERF_MENU_BEGIN(GUNBROS_STAGE_STACK_LOAD, perf_begin);
     ret = SO_CONTINUE(int, h_menu_stack_load_menu, self);
+    GUNBROS_PERF_END(GUNBROS_STAGE_STACK_LOAD, perf_begin, 0);
 
     if (log) {
         sceClibPrintf("[TRACE-ASSET] leave CMenuStack::LoadMenu(this=%p) -> %d\n", self, ret);
@@ -1788,7 +1802,9 @@ static int trace_menu_system_set_menu(void *self, int screen, unsigned short arg
                       self, screen, (unsigned int)arg, branch);
     }
 
+    GUNBROS_PERF_MENU_BEGIN(GUNBROS_STAGE_SET_MENU, perf_begin);
     ret = SO_CONTINUE(int, h_menu_system_set_menu, self, screen, arg, branch);
+    GUNBROS_PERF_END(GUNBROS_STAGE_SET_MENU, perf_begin, 0);
 
     if (log) {
         sceClibPrintf("[TRACE-MENU] leave CMenuSystem::SetMenu(this=%p, screen=%d, arg=%u, branch=%d) -> %d\n",
@@ -1810,7 +1826,9 @@ static int trace_menu_system_push_menu(void *self, int screen, unsigned short ar
                       self, screen, (unsigned int)arg, branch);
     }
 
+    GUNBROS_PERF_MENU_BEGIN(GUNBROS_STAGE_PUSH_MENU, perf_begin);
     ret = SO_CONTINUE(int, h_menu_system_push_menu, self, screen, arg, branch);
+    GUNBROS_PERF_END(GUNBROS_STAGE_PUSH_MENU, perf_begin, 0);
 
     if (log) {
         sceClibPrintf("[TRACE-MENU] leave CMenuSystem::PushMenu(this=%p, screen=%d, arg=%u, branch=%d) -> %d\n",
@@ -1830,7 +1848,9 @@ static int trace_menu_system_pop_menu(void *self, int branch) {
         sceClibPrintf("[TRACE-MENU] enter CMenuSystem::PopMenu(this=%p, branch=%d)\n", self, branch);
     }
 
+    GUNBROS_PERF_MENU_BEGIN(GUNBROS_STAGE_POP_MENU, perf_begin);
     ret = SO_CONTINUE(int, h_menu_system_pop_menu, self, branch);
+    GUNBROS_PERF_END(GUNBROS_STAGE_POP_MENU, perf_begin, 0);
 
     if (log) {
         sceClibPrintf("[TRACE-MENU] leave CMenuSystem::PopMenu(this=%p, branch=%d) -> %d\n",
@@ -1857,6 +1877,7 @@ static int trace_res_pack_toc_init(void *self) {
     return ret;
 }
 
+#ifndef GUNBROS_QUIET_LOGS
 static uint32_t resource_table_digest(const void *data, size_t size) {
     const unsigned char *bytes = (const unsigned char *)data;
     uint32_t hash = 2166136261u;
@@ -1913,6 +1934,8 @@ static void verify_res_pack_toc_bind(void *self, unsigned short pack_idx, int bi
                   actual_digest, expected_digest, expected);
 }
 
+#endif /* !GUNBROS_QUIET_LOGS: verification only reports diagnostics. */
+
 static int trace_res_pack_toc_bind(void *self, unsigned short pack_idx) {
     int log = trace_allow("CResPackTOC::Bind");
     int ret;
@@ -1922,8 +1945,12 @@ static int trace_res_pack_toc_bind(void *self, unsigned short pack_idx) {
                       self, (unsigned int)pack_idx);
     }
 
+    GUNBROS_PERF_BEGIN(pack_begin);
     ret = SO_CONTINUE(int, h_res_pack_toc_bind, self, pack_idx);
+    GUNBROS_PERF_END(GUNBROS_STAGE_PACK_BIND, pack_begin, 0);
+#ifndef GUNBROS_QUIET_LOGS
     verify_res_pack_toc_bind(self, pack_idx, ret);
+#endif
 
     if (log) {
         sceClibPrintf("[TRACE-ASSET] leave CResPackTOC::Bind(this=%p, pack=%u) -> %d\n",
@@ -2224,6 +2251,11 @@ static void vita_asset_preload_record(void *pool, int format, int image_id,
     entry->surface = surface;
     entry->slow_load_us = elapsed_us;
     entry->load_count++;
+    if (entry->load_count > 1u) {
+        GUNBROS_PERF_LOG("[PERF-RELOAD] pack=%u image=%d count=%u load_us=%llu pinned_before=%d\n",
+            target_pack, image_id, entry->load_count,
+            (unsigned long long)elapsed_us, was_pinned);
+    }
     if (!entry->pending) {
         g_vita_asset_preload_pending_count++;
     }
@@ -2248,6 +2280,21 @@ static void vita_asset_preload_tick(void) {
     unsigned int i;
 #ifdef GUNBROS_ENABLE_PERF_TRACE
     static unsigned int pin_logs;
+    static uint64_t last_residency_report;
+    uint64_t now = sceKernelGetProcessTimeWide();
+    if (g_vita_asset_preload_count && now - last_residency_report >= 2000000u) {
+        unsigned int pinned = 0u, reloads = 0u;
+        for (unsigned int j = 0; j < g_vita_asset_preload_count; ++j) {
+            pinned += g_vita_asset_preloads[j].pinned != 0u;
+            if (g_vita_asset_preloads[j].load_count > 1u)
+                reloads += g_vita_asset_preloads[j].load_count - 1u;
+        }
+        GUNBROS_PERF_LOG("[PERF-RESIDENCY] phase=%u catalog=%u pinned=%u pending=%u repeat_loads=%u catalog_bytes=%u\n",
+            g_vita_asset_preload_phase, g_vita_asset_preload_count, pinned,
+            g_vita_asset_preload_pending_count, reloads,
+            (unsigned int)sizeof(g_vita_asset_preloads));
+        last_residency_report = now;
+    }
 #endif
 
     if (g_vita_asset_preload_phase != VITA_ASSET_PHASE_MENUS ||
@@ -2475,6 +2522,7 @@ static void *trace_image_pool_load_image(void *self, int format, int image_id,
 #ifdef GUNBROS_ENABLE_PERF_TRACE
     begin_us = sceKernelGetProcessTimeWide();
 #endif
+    GUNBROS_PERF_BEGIN(image_begin);
     if (g_original_image_pool_load_image) {
         ret = ((image_pool_load_fn_t)g_original_image_pool_load_image)(
             self, format, image_id, pack_idx, arg3, arg4, arg5, arg6);
@@ -2482,6 +2530,7 @@ static void *trace_image_pool_load_image(void *self, int format, int image_id,
         ret = SO_CONTINUE(void *, h_image_pool_load_image, self, format,
                           image_id, pack_idx, arg3, arg4, arg5, arg6);
     }
+    GUNBROS_PERF_END(GUNBROS_STAGE_IMAGE, image_begin, 0);
 #ifdef GUNBROS_ENABLE_PERF_TRACE
     end_us = sceKernelGetProcessTimeWide();
     elapsed_us = end_us >= begin_us ? end_us - begin_us : 0u;
@@ -2505,7 +2554,7 @@ static void *trace_image_pool_load_image(void *self, int format, int image_id,
                               target_pack, arg3, arg4, arg5, arg6,
                               ret, elapsed_us);
 #ifdef GUNBROS_ENABLE_PERF_TRACE
-    if (elapsed_us >= 250000u) {
+    if (elapsed_us >= 20000u) {
         GUNBROS_PERF_LOG("[PERF-LOAD] kind=image elapsed_us=%llu pool=%p fmt=%d image=%d pack=%u target_pack=%u result=%p\n",
                          (unsigned long long)elapsed_us, self,
                          format, image_id, (unsigned int)pack_idx,
@@ -2515,3 +2564,26 @@ static void *trace_image_pool_load_image(void *self, int format, int image_id,
 
     return ret;
 }
+
+#ifdef GUNBROS_ENABLE_PERF_TRACE
+/* Keep post-queue binding visible: the supplied trace stalled after LoadNext
+ * returned, so resource timing alone cannot account for the whole transition. */
+static so_hook h_perf_mission_bind, h_perf_mission_info_bind, h_perf_list_bind;
+static uintptr_t g_perf_mission_bind, g_perf_mission_info_bind, g_perf_list_bind;
+#define DEFINE_MENU_BIND_PROFILE(fn, hook, original, label) \
+static void fn(void *self) { \
+    GUNBROS_PERF_LOG("[PERF-BIND-BEGIN] menu=" label " self=%p\n", self); \
+    gunbros_perf_log_flush(); \
+    GUNBROS_PERF_BEGIN(begin); \
+    if (original) ((void (*)(void *))original)(self); \
+    else (void)SO_CONTINUE(int, hook, self); \
+    uint64_t elapsed = gunbros_perf_now() - begin; \
+    GUNBROS_PERF_END(GUNBROS_STAGE_MENU_BIND, begin, 0); \
+    GUNBROS_PERF_LOG("[PERF-BIND-END] menu=" label " elapsed_us=%llu\n", (unsigned long long)elapsed); \
+    gunbros_perf_log_flush(); \
+}
+DEFINE_MENU_BIND_PROFILE(perf_mission_bind, h_perf_mission_bind, g_perf_mission_bind, "mission")
+DEFINE_MENU_BIND_PROFILE(perf_mission_info_bind, h_perf_mission_info_bind, g_perf_mission_info_bind, "mission-info")
+DEFINE_MENU_BIND_PROFILE(perf_list_bind, h_perf_list_bind, g_perf_list_bind, "list")
+#undef DEFINE_MENU_BIND_PROFILE
+#endif

@@ -1,6 +1,41 @@
 /* Central hook registration and ordered patch installation. */
 
 static void patch_menu_trace_hooks(void) {
+#ifdef GUNBROS_ENABLE_PERF_TRACE
+    g_perf_mission_bind = hook_symbol_store_arm_trampoline_checked(
+        "Mission Bind/timing", "_ZN12CMenuMission4BindEv",
+        (uintptr_t)perf_mission_bind, &h_perf_mission_bind, 0xe92d4ff0u, 0xe5901008u);
+    g_perf_mission_info_bind = hook_symbol_store_arm_trampoline_checked(
+        "MissionInfo Bind/timing", "_ZN16CMenuMissionInfo4BindEv",
+        (uintptr_t)perf_mission_info_bind, &h_perf_mission_info_bind, 0xe92d40f0u, 0xe5903004u);
+    g_perf_list_bind = hook_symbol_store_arm_trampoline_checked(
+        "List Bind/timing", "_ZN9CMenuList4BindEv",
+        (uintptr_t)perf_list_bind, &h_perf_list_bind, 0xe92d45f0u, 0xe5903004u);
+#endif
+    /* Callback's first two ARM instructions are relocatable. Do not install a
+     * partial notification patch on a different executable revision. */
+    g_planet_unflatten = (planet_unflatten_fn)so_symbol(&so_mod,
+        "_ZNK8CGunBros20UnFlattenObjectIndexE14GameObjectTypetRtRh");
+    g_planet_available = (planet_query_fn)so_symbol(&so_mod,
+        "_ZNK15CContentTracker8UserData24HasObjectBecomeAvailableE14GameObjectTypeth");
+    g_planet_is_seen = (planet_query_fn)so_symbol(&so_mod,
+        "_ZNK15CContentTracker8UserData17HasObjectBeenSeenE14GameObjectTypeth");
+    g_planet_set_seen = (planet_seen_fn)so_symbol(&so_mod,
+        "_ZN15CContentTracker8UserData17ObjectHasBeenSeenE14GameObjectTypethh");
+    uintptr_t planet_callback = so_symbol(&so_mod,
+        "_ZN12CMenuMission14PlanetCallbackEPviPK4Rect");
+    if (g_planet_unflatten && g_planet_available && g_planet_is_seen && g_planet_set_seen &&
+        planet_callback && !(planet_callback & 1u) &&
+        ((const uint32_t *)planet_callback)[0] == 0xe92d41f0u &&
+        ((const uint32_t *)planet_callback)[1] == 0xe5d03024u) {
+        g_original_planet_callback = hook_symbol_store_arm_trampoline_checked(
+            "Planet notification persistence", "_ZN12CMenuMission14PlanetCallbackEPviPK4Rect",
+            (uintptr_t)trace_planet_callback, &h_planet_callback, 0xe92d41f0u, 0xe5d03024u);
+        if (h_planet_callback.addr)
+            hook_symbol_store("Planet selection acknowledgement",
+                "_ZN15CContentTracker8UserData17ObjectHasBeenSeenE14GameObjectTypethh",
+                (uintptr_t)trace_planet_object_seen, &h_planet_seen);
+    }
     g_game_reset_state_settings = so_symbol(&so_mod, "_ZN5CGame18ResetStateSettingsEv");
     if (g_game_reset_state_settings) {
         /* Cold constructors use the original-entry continuation because their
@@ -22,8 +57,9 @@ static void patch_menu_trace_hooks(void) {
         (uintptr_t)trace_menu_system_push_menu, &h_menu_system_push_menu);
     hook_symbol_store("Classic Bank", "_ZN10CMenuStore7RefreshE10MenuActioni",
         (uintptr_t)classic_store_refresh, &h_classic_store_refresh);
-    hook_symbol_store("Classic refinery state", "_ZN17CMenuDataProvider20GetElementValueInt32E16MenuDataCategoryij",
-        (uintptr_t)classic_provider_state, &h_classic_provider_state);
+    g_original_classic_provider_state = hook_symbol_store_arm_literal_trampoline_checked(
+        "Classic refinery state/hot provider", "_ZN17CMenuDataProvider20GetElementValueInt32E16MenuDataCategoryij",
+        (uintptr_t)classic_provider_state, &h_classic_provider_state, 0xe92d4ff0u, 0xe59f4914u);
     hook_symbol_store("Classic refinery purchase", "_ZN18CRefinementManager10UnlockSlotEjP15CPlayerProgress",
         (uintptr_t)classic_unlock, &h_classic_unlock);
     patch_store_stat_format_conversion();
@@ -128,42 +164,34 @@ static void patch_menu_trace_hooks(void) {
     /* CGunBros::SetMenu was a trace/perf-context wrapper only.  Leaving the
      * native entry untouched avoids a code rewrite plus I-cache flush on each
      * visible menu transition in release builds. */
-    hook_symbol_store("CGunBros::FlattenObjectIndex const",
-                      "_ZNK8CGunBros18FlattenObjectIndexE14GameObjectTypethRt",
-                      (uintptr_t)trace_gunbros_flatten_object_index_const,
-                      &h_gunbros_flatten_object_index_const);
-    hook_symbol_store("CGunBros::GetObjectCount const",
-                      "_ZNK8CGunBros14GetObjectCountE14GameObjectType",
-                      (uintptr_t)trace_gunbros_get_object_count_const,
-                      &h_gunbros_get_object_count_const);
-    hook_symbol_store("CGunBros::ValidateGameObject const",
-                      "_ZNK8CGunBros18ValidateGameObjectE14GameObjectTypeth",
-                      (uintptr_t)trace_gunbros_validate_game_object_3_const,
-                      &h_gunbros_validate_game_object_3_const);
-    hook_symbol_store("CGunBros::ValidateGameObject(ref) const",
-                      "_ZNK8CGunBros18ValidateGameObjectE14GameObjectTypeRKN11IGameObject13GameObjectRefE",
-                      (uintptr_t)trace_gunbros_validate_game_object_ref_const,
-                      &h_gunbros_validate_game_object_ref_const);
+    g_original_registry_flatten = hook_symbol_store_arm_trampoline_checked(
+        "CGunBros::FlattenObjectIndex const/hot continuation", "_ZNK8CGunBros18FlattenObjectIndexE14GameObjectTypethRt",
+        (uintptr_t)trace_gunbros_flatten_object_index_const, &h_gunbros_flatten_object_index_const, 0xe92d00f0u, 0xe590c13cu);
+    g_original_registry_count = hook_symbol_store_arm_trampoline_checked(
+        "CGunBros::GetObjectCount const/hot continuation", "_ZNK8CGunBros14GetObjectCountE14GameObjectType",
+        (uintptr_t)trace_gunbros_get_object_count_const, &h_gunbros_get_object_count_const, 0xe92d0070u, 0xe590313cu);
+    g_original_registry_validate = hook_symbol_store_arm_trampoline_checked(
+        "CGunBros::ValidateGameObject const/hot continuation", "_ZNK8CGunBros18ValidateGameObjectE14GameObjectTypeth",
+        (uintptr_t)trace_gunbros_validate_game_object_3_const, &h_gunbros_validate_game_object_3_const, 0xe351001bu, 0xe52d4004u);
+    g_original_registry_validate_ref = hook_symbol_store_arm_trampoline_checked(
+        "CGunBros::ValidateGameObject(ref) const/hot continuation", "_ZNK8CGunBros18ValidateGameObjectE14GameObjectTypeRKN11IGameObject13GameObjectRefE",
+        (uintptr_t)trace_gunbros_validate_game_object_ref_const, &h_gunbros_validate_game_object_ref_const, 0xe5d23006u, 0xe1d220b4u);
     /* Do not wrap the flattened GetGameObject overloads or the nested
      * UnFlattenObjectIndex method. Their original implementations already
      * propagate a false lookup. The exact UnFlatten null dereference is
      * guarded inline so no C wrapper/trampoline participates in this path. */
-    hook_symbol_store("CGunBros::GetGameObject(pack)",
-                      "_ZN8CGunBros13GetGameObjectE14GameObjectTypeth",
-                      (uintptr_t)trace_gunbros_get_game_object_pack,
-                      &h_gunbros_get_game_object_pack);
-    hook_symbol_store("CGunBros::GetGameObject(pack) const",
-                      "_ZNK8CGunBros13GetGameObjectE14GameObjectTypeth",
-                      (uintptr_t)trace_gunbros_get_game_object_pack_const,
-                      &h_gunbros_get_game_object_pack_const);
-    hook_symbol_store("CGunBros::LoadGameObjectReq",
-                      "_ZN8CGunBros17LoadGameObjectReqE14GameObjectTypeth",
-                      (uintptr_t)trace_gunbros_load_game_object_req,
-                      &h_gunbros_load_game_object_req);
-    hook_symbol_store("CGunBros::FreeGameObjectReq",
-                      "_ZN8CGunBros17FreeGameObjectReqE14GameObjectTypeth",
-                      (uintptr_t)trace_gunbros_free_game_object_req,
-                      &h_gunbros_free_game_object_req);
+    g_original_registry_get = hook_symbol_store_arm_trampoline_checked(
+        "CGunBros::GetGameObject(pack)/hot continuation", "_ZN8CGunBros13GetGameObjectE14GameObjectTypeth",
+        (uintptr_t)trace_gunbros_get_game_object_pack, &h_gunbros_get_game_object_pack, 0xe52d4004u, 0xe590c13cu);
+    g_original_registry_get_const = hook_symbol_store_arm_trampoline_checked(
+        "CGunBros::GetGameObject(pack) const/hot continuation", "_ZNK8CGunBros13GetGameObjectE14GameObjectTypeth",
+        (uintptr_t)trace_gunbros_get_game_object_pack_const, &h_gunbros_get_game_object_pack_const, 0xe52d4004u, 0xe590c13cu);
+    g_original_registry_load_req = hook_symbol_store_arm_trampoline_checked(
+        "CGunBros::LoadGameObjectReq/hot continuation", "_ZN8CGunBros17LoadGameObjectReqE14GameObjectTypeth",
+        (uintptr_t)trace_gunbros_load_game_object_req, &h_gunbros_load_game_object_req, 0xe92d4070u, 0xe24dd010u);
+    g_original_registry_free_req = hook_symbol_store_arm_trampoline_checked(
+        "CGunBros::FreeGameObjectReq/hot continuation", "_ZN8CGunBros17FreeGameObjectReqE14GameObjectTypeth",
+        (uintptr_t)trace_gunbros_free_game_object_req, &h_gunbros_free_game_object_req, 0xe92d4070u, 0xe24dd010u);
     hook_symbol_store("CBrother::Spawn (construct)",
                       "_ZN8CBrother5SpawnEPKNS_9SpawnDataE",
                       (uintptr_t)trace_brother_spawn_construct,

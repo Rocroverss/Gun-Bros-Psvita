@@ -41,6 +41,7 @@ static uintptr_t hook_symbol_store_arm_trampoline_checked(
 #include "patch/shops.inc.c"
 #include "patch/rendering.inc.c"
 #include "patch/menus.inc.c"
+#include "patch/planet_notifications.inc.c"
 #include "patch/classic.inc.c"
 #include "patch/graphics.inc.c"
 #include "patch/hook_helpers.inc.c"

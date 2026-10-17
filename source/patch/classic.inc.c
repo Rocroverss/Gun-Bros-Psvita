@@ -1,3 +1,4 @@
+static uintptr_t g_original_classic_provider_state;
 static so_hook h_classic_provider_state, h_classic_unlock, h_classic_store_refresh;
 static so_hook h_classic_branch, h_classic_options_show;
 
@@ -43,7 +44,14 @@ static int classic_provider_state(void *self, int category, int element, unsigne
             return *(uint32_t *)(void *)vita_refinery_slot(manager, index);
         }
     }
-    return SO_CONTINUE(int, h_classic_provider_state, self, category, element, index);
+    GUNBROS_PERF_BEGIN(provider_begin);
+    int result;
+    if (g_original_classic_provider_state)
+        result = ((int (*)(void *, int, int, unsigned))g_original_classic_provider_state)(self, category, element, index);
+    else
+        result = SO_CONTINUE(int, h_classic_provider_state, self, category, element, index);
+    GUNBROS_PERF_END(GUNBROS_STAGE_MENU_PROVIDER, provider_begin, 0);
+    return result;
 }
 
 static int classic_unlock(void *manager, unsigned index, void *progress) {

@@ -11,6 +11,8 @@
 #include <psp2/kernel/clib.h>
 
 #ifdef GUNBROS_QUIET_LOGS
+#undef GUNBROS_ENABLE_PERF_TRACE
+#undef DEBUG_SOLOADER
 /* A function-like macro also removes evaluation of expensive log arguments. */
 #define sceClibPrintf(...) ((void)0)
 #endif
