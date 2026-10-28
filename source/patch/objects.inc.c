@@ -488,7 +488,10 @@ static int trace_weapon_mastery_add_xp(void *self, void *gun, unsigned int pack,
         return 0;
     }
 
-    return SO_CONTINUE(int, h_weapon_mastery_add_xp, self, gun, pack, variant, hand, xp, reason);
+    vita_weapon_mastery_prepare(self);
+    int result = SO_CONTINUE(int, h_weapon_mastery_add_xp, self, gun, pack, variant, hand, xp, reason);
+    (void)vita_weapon_mastery_save(self);
+    return result;
 }
 
 static void trace_challenge_update_from_level_session(void *self, const void *level, const void *ref, unsigned int player_index) {
@@ -2632,6 +2635,7 @@ static void vita_offline_profile_tick(int dt) {
             g_vita_offline_profile_deferred_elapsed_ms = 0u;
         }
         (void)vita_offline_missions_save(0);
+        (void)vita_weapon_mastery_save(vita_mastery_local_owner());
     }
 }
 
@@ -2647,6 +2651,7 @@ void gunbros_flush_offline_profile(void) {
         g_vita_offline_profile_deferred_elapsed_ms = 0u;
     }
     (void)vita_offline_missions_save(1);
+    (void)vita_weapon_mastery_save(vita_mastery_local_owner());
 }
 
 static void vita_default_profile_init(void) {

@@ -38,6 +38,7 @@ static uintptr_t hook_symbol_store_arm_trampoline_checked(
 #include "patch/shared.inc.c"
 #include "patch/audio.inc.c"
 #include "patch/objects.inc.c"
+#include "patch/weapon_mastery.inc.c"
 #include "patch/shops.inc.c"
 #include "patch/rendering.inc.c"
 #include "patch/menus.inc.c"

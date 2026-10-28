@@ -214,6 +214,9 @@ static void vita_offline_profile_prepare_live_owner(const char *source);
 static void vita_offline_profile_begin_bulk_transition(const char *source);
 static void vita_offline_profile_end_bulk_transition(const char *source);
 static int store_offline_purchases_save(int force);
+static void *vita_mastery_local_owner(void);
+static void vita_weapon_mastery_prepare(void *owner);
+static int vita_weapon_mastery_save(void *owner);
 static int trace_armor_template_validate(const void *self);
 static void ensure_gti2_keepalive_offline_guards(const char *source);
 

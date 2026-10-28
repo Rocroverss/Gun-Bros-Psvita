@@ -139,6 +139,18 @@ static void patch_menu_trace_hooks(void) {
                       "_ZN6CLevel7OnStartEv",
                       (uintptr_t)trace_level_on_start,
                       &h_level_on_start);
+    g_original_mastery_upgrade = hook_symbol_store_arm_trampoline_checked(
+        "CWeaponMastery::Upgrade/local save", "_ZN14CWeaponMastery7UpgradeEPN4CGun8TemplateEthhj",
+        (uintptr_t)trace_mastery_upgrade, &h_mastery_upgrade, 0xe92d47f0u, 0xe24dd008u);
+    g_original_mastery_get_xp = hook_symbol_store_arm_trampoline_checked(
+        "CWeaponMastery::GetXP/local restore", "_ZNK14CWeaponMastery5GetXPEthh",
+        (uintptr_t)trace_mastery_get_xp, &h_mastery_get_xp, 0xe92d4010u, 0xe590c000u);
+    hook_symbol_store("CWeaponMastery::LoadFromDisk/local restore",
+        "_ZN14CWeaponMastery12LoadFromDiskEP15CResourceLoader",
+        (uintptr_t)trace_mastery_load_file, &h_mastery_load_file);
+    hook_symbol_store("CWeaponMastery::LoadFromDisk(stream)/local restore",
+        "_ZN14CWeaponMastery12LoadFromDiskERN3com3glu8platform10components12CInputStreamEi",
+        (uintptr_t)trace_mastery_load_stream, &h_mastery_load_stream);
     g_original_profile_manager_save =
         hook_symbol_store_arm_trampoline_checked(
             "CProfileManager::Save/resident-transition",
