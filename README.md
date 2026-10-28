@@ -12,6 +12,11 @@ The port works by loading the official Android ARMv7 executable in memory, resol
 
 ## Changelog
 
+### v1.03
+
+- Fixed crashes and freezes reported by some users
+- Fixed a bug that prevented upgraded gun progression from being saved
+
 ### v1.02
 
 - Fixed red exclamation mark bug on planets
